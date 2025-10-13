@@ -1,0 +1,15 @@
+numpy
+opencv-python
+pillow
+scikit-learn
+scipy
+matplotlib
+pandas
+pathlib
+
+# FastAPI and web dependencies
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+requests
