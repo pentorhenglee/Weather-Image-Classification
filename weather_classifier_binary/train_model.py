@@ -1,12 +1,14 @@
 """
 BALANCED improved training - optimal augmentation
 """
-
-import numpy as np
 from pathlib import Path
+import numpy as np
 import cv2
 from sklearn.model_selection import train_test_split
 from models_binary import NeuralNetworkBinaryV2
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
 import pickle
 
 print("=" * 70)
@@ -18,56 +20,85 @@ CLASSES = ["Rain", "No-Rain"]
 name2id = {c: i for i, c in enumerate(CLASSES)}
 EXTS = {".jpg", ".jpeg", ".png"}
 
-# Load
+# Load images
+print("\n📂 Loading images...")
 X_list, y_list = [], []
+
 for c in CLASSES:
-    files = [p for p in (DATA / c).rglob("*") if p.suffix.lower() in EXTS]
-    for p in files:
-        img = cv2.imread(str(p))
-        if img is None:
-            continue
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (50, 50))
-        X_list.append(img)
-        y_list.append(name2id[c])
+    folder = DATA / c
+    if not folder.exists():
+        print(f"❌ Warning: Folder '{folder}' not found!")
+        continue
+    
+    images = [p for p in folder.iterdir() if p.suffix.lower() in EXTS]
+    print(f"  {c}: {len(images)} images")
+    
+    for img_path in images:
+        try:
+            img = cv2.imread(str(img_path))
+            if img is None:
+                continue
+            img = cv2.resize(img, (50, 50))
+            X_list.append(img)
+            y_list.append(name2id[c])
+        except Exception as e:
+            print(f"Error loading {img_path}: {e}")
 
-X = (np.stack(X_list).astype(np.float32) / 255.0)
-y = np.array(y_list, dtype=np.int64)
+X = np.array(X_list)
+y = np.array(y_list)
 
-Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+print(f"\n✅ Loaded {len(X)} images total")
+print(f"   Rain: {np.sum(y == 0)}")
+print(f"   No-Rain: {np.sum(y == 1)}")
 
-print(f"Original: Rain={np.sum(ytr == 0)}, No-Rain={np.sum(ytr == 1)}")
+# Split data
+Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-# MODERATE augmentation - only 2x rain images (not 5x)
-rain_idx = ytr == 0
-rain_imgs = Xtr[rain_idx]
+print(f"\n📊 Split:")
+print(f"   Training: {len(Xtr)} images")
+print(f"   Testing: {len(Xte)} images")
 
-# Just horizontal flip + darker version
-rain_aug = np.concatenate([
-    rain_imgs[:, :, ::-1, :],     # H-flip only
-    rain_imgs * 0.9,              # Slightly darker
-], axis=0)
+# Balance training data with augmentation
+print("\n🔄 Augmenting Rain images for balance...")
+rain_mask = (ytr == 0)
+rain_imgs = Xtr[rain_mask]
+no_rain_imgs = Xtr[~rain_mask]
 
-Xtr = np.concatenate([Xtr, rain_aug])
-ytr = np.concatenate([ytr, np.zeros(rain_aug.shape[0], dtype=np.int64)])
+# Augment rain images
+rain_flip = rain_imgs[:, :, ::-1, :]  # Horizontal flip
+rain_dark = (rain_imgs * 0.9).astype(np.uint8)  # Darker
+rain_bright = np.clip(rain_imgs * 1.1, 0, 255).astype(np.uint8)  # Brighter
 
-print(f"Augmented: Rain={np.sum(ytr == 0)}, No-Rain={np.sum(ytr == 1)}")
-print(f"Balance: 1:{np.sum(ytr == 1) / np.sum(ytr == 0):.2f}\n")
+# Combine
+Xtr_balanced = np.concatenate([no_rain_imgs, rain_imgs, rain_flip, rain_dark, rain_bright])
+ytr_balanced = np.concatenate([
+    np.ones(len(no_rain_imgs)),  # No-Rain
+    np.zeros(len(rain_imgs) * 4)  # Rain (original + 3 augmented)
+]).astype(int)
 
-# Prepare
-Xtr_f = Xtr.reshape(Xtr.shape[0], -1).T
-Xte_f = Xte.reshape(Xte.shape[0], -1).T
-Ytr = np.zeros((2, Xtr.shape[0]), np.float32)
-Ytr[ytr, np.arange(len(ytr))] = 1
-Yte = np.zeros((2, Xte.shape[0]), np.float32)
-Yte[yte, np.arange(len(yte))] = 1
+print(f"   After augmentation:")
+print(f"   Rain: {np.sum(ytr_balanced == 0)}")
+print(f"   No-Rain: {np.sum(ytr_balanced == 1)}")
 
-# Train with moderate parameters
-print("Training (150 epochs, lr=0.001)...")
+# Reshape for neural network
+Xtr_f = Xtr_balanced.reshape(Xtr_balanced.shape[0], -1).T / 255.0
+Xte_f = Xte.reshape(Xte.shape[0], -1).T / 255.0
+
+# One-hot encode
+N_tr = Xtr_f.shape[1]
+N_te = Xte_f.shape[1]
+Ytr = np.zeros((2, N_tr))
+Yte = np.zeros((2, N_te))
+Ytr[ytr_balanced, np.arange(N_tr)] = 1
+Yte[yte, np.arange(N_te)] = 1
+
+# Train model
+print("\n🚀 Training model...")
 net = NeuralNetworkBinaryV2()
-net.train(Xtr_f, Ytr, epochs=150, lr=1e-3, batch_size=64, verbose=True)
+net.train(Xtr_f, Ytr, epochs=150, lr=0.001, batch_size=64, verbose=True)
 
-# Evaluate
+# After training, evaluate and create confusion matrix
+print("\n📈 Evaluating model...")
 Pte = net.predict(Xte_f)
 acc = net.accuracy(Pte, Yte)
 pred = np.argmax(Pte, axis=0)
@@ -83,13 +114,52 @@ print(f"  No-Rain: {no_rain_acc:.2f}% ({np.sum(true == 1)} samples)")
 print(f"  Overall: {acc:.2f}%")
 print(f"{'='*70}\n")
 
-# Confusion matrix
+# CREATE CONFUSION MATRIX VISUALIZATION
+plt.figure(figsize=(10, 8))
+
+# Calculate confusion matrix
+cm = confusion_matrix(true, pred)
+
+# Normalize confusion matrix
+cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+# Create heatmap
+sns.heatmap(cm_normalized, annot=True, fmt='.2%', cmap='Blues', 
+            xticklabels=CLASSES, yticklabels=CLASSES,
+            cbar_kws={'label': 'Percentage'})
+
+plt.title('Normalized Confusion Matrix\nBinary Weather Classification', fontsize=14, fontweight='bold')
+plt.ylabel('True Label', fontsize=12)
+plt.xlabel('Predicted Label', fontsize=12)
+
+# Add counts to the plot
+for i in range(len(CLASSES)):
+    for j in range(len(CLASSES)):
+        plt.text(j + 0.5, i + 0.7, f'n={cm[i, j]}', 
+                ha='center', va='center', fontsize=10, color='gray')
+
+plt.tight_layout()
+plt.savefig('confusion_matrix_binary.png', dpi=300, bbox_inches='tight')
+print("✅ Confusion matrix saved as 'confusion_matrix_binary.png'")
+
+# Also create a raw counts confusion matrix
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='YlOrRd',
+            xticklabels=CLASSES, yticklabels=CLASSES)
+plt.title('Confusion Matrix (Counts)\nBinary Weather Classification', fontsize=14, fontweight='bold')
+plt.ylabel('True Label', fontsize=12)
+plt.xlabel('Predicted Label', fontsize=12)
+plt.tight_layout()
+plt.savefig('confusion_matrix_counts_binary.png', dpi=300, bbox_inches='tight')
+print("✅ Confusion matrix (counts) saved as 'confusion_matrix_counts_binary.png'\n")
+
+# Print detailed metrics
 tp = np.sum((true == 0) & (pred == 0))
 fn = np.sum((true == 0) & (pred == 1))
 fp = np.sum((true == 1) & (pred == 0))
 tn = np.sum((true == 1) & (pred == 1))
 
-print("Confusion Matrix:")
+print("Confusion Matrix (Raw Counts):")
 print(f"              Predicted")
 print(f"            Rain  No-Rain")
 print(f"Actual Rain  {tp:3d}    {fn:3d}")
@@ -97,26 +167,29 @@ print(f"    No-Rain  {fp:3d}    {tn:3d}\n")
 
 precision = tp / (tp + fp) if (tp + fp) > 0 else 0
 recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
-print(f"Rain Detection Metrics:")
-print(f"  Precision: {precision:.2%} (accuracy when predicting rain)")
-print(f"  Recall:    {recall:.2%} (% of rain events detected)")
-print(f"  F1-Score:  {f1:.2%}")
+print("Detailed Metrics:")
+print(f"  Precision (Rain): {precision:.2%}")
+print(f"  Recall (Rain):    {recall:.2%}")
+print(f"  F1-Score (Rain):  {f1:.2%}")
 
-# Save
+# Save model with metadata
+print(f"\n{'='*70}")
+print("Saving model weights...")
 weights = {
-    'W1': net.W1, 'b1': net.b1, 'W2': net.W2, 'b2': net.b2,
-    'W3': net.W3, 'b3': net.b3, 'W4': net.W4, 'b4': net.b4,
-    'accuracy': acc, 'rain_accuracy': rain_acc,
-    'no_rain_accuracy': no_rain_acc, 'classes': CLASSES,
-    'input_shape': (50, 50, 3)
+    'W1': net.W1, 'b1': net.b1,
+    'W2': net.W2, 'b2': net.b2,
+    'W3': net.W3, 'b3': net.b3,
+    'W4': net.W4, 'b4': net.b4,
+    'accuracy': acc,
+    'rain_accuracy': rain_acc,
+    'no_rain_accuracy': no_rain_acc,
+    'confusion_matrix': cm.tolist()
 }
 
-with open("model_weights_binary.pkl", 'wb') as f:
+with open('model_weights_binary.pkl', 'wb') as f:
     pickle.dump(weights, f)
 
-print(f"\n✓ Model saved to: model_weights_binary.pkl")
-print(f"\nRestart API:")
-print(f"  kill -9 $(lsof -ti:8001)")
-print(f"  python3 -m uvicorn api_binary:app --reload --port 8001 &")
+print(f"✅ Model saved to 'model_weights_binary.pkl'")
+print(f"{'='*70}\n")
