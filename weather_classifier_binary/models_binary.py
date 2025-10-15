@@ -4,10 +4,8 @@ Contains model classes optimized for 2-class prediction
 """
 
 import numpy as np
-
 class NeuralNetworkBinaryV2(object):
     """Deeper Neural Network with 4 layers for binary classification"""
-
     def __init__(self):
         self.input_unit = 7500
         self.hidden_units_1 = 1024

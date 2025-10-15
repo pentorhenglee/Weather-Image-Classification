@@ -95,15 +95,6 @@ def load_model():
 
 
 def preprocess_image(image_bytes: bytes) -> np.ndarray:
-    """
-    Preprocess uploaded image for model prediction
-    
-    Args:
-        image_bytes: Raw image bytes
-        
-    Returns:
-        Preprocessed image array of shape (7500, 1)
-    """
     try:
         # Convert bytes to PIL Image
         image = Image.open(BytesIO(image_bytes))
@@ -178,15 +169,6 @@ async def get_model_info():
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict_weather(file: UploadFile = File(...)):
-    """
-    Classify weather condition from uploaded image (Rain vs No-Rain)
-    
-    Args:
-        file: Image file (jpg, png, jpeg)
-        
-    Returns:
-        Prediction with class, confidence, and probabilities
-    """
     # Check if model is loaded
     if model is None:
         raise HTTPException(
@@ -249,15 +231,6 @@ async def predict_weather(file: UploadFile = File(...)):
 
 @app.post("/predict-batch", tags=["Prediction"])
 async def predict_batch(files: List[UploadFile] = File(...)):
-    """
-    Classify multiple weather images at once
-    
-    Args:
-        files: List of image files
-        
-    Returns:
-        List of predictions
-    """
     if model is None:
         raise HTTPException(
             status_code=503, 

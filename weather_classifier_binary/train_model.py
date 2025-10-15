@@ -92,10 +92,58 @@ Yte = np.zeros((2, N_te))
 Ytr[ytr_balanced, np.arange(N_tr)] = 1
 Yte[yte, np.arange(N_te)] = 1
 
-# Train model
+# Train model with loss tracking
 print("\n🚀 Training model...")
 net = NeuralNetworkBinaryV2()
-net.train(Xtr_f, Ytr, epochs=150, lr=0.001, batch_size=64, verbose=True)
+
+# Track losses
+train_losses = []
+test_losses = []
+epochs_list = []
+
+NUM_EPOCHS = 150
+LEARNING_RATE = 0.001
+BATCH_SIZE = 64
+
+for epoch in range(NUM_EPOCHS):
+    # Mini-batch training
+    N = Xtr_f.shape[1]
+    indices = np.random.permutation(N)
+    for i in range(0, N, BATCH_SIZE):
+        batch_idx = indices[i:i+BATCH_SIZE]
+        X_batch = Xtr_f[:, batch_idx]
+        Y_batch = Ytr[:, batch_idx]
+        net.feed_forward(X_batch)
+        net.back_propagation(X_batch, Y_batch, LEARNING_RATE)
+    
+    # Calculate losses every 5 epochs
+    if (epoch + 1) % 5 == 0:
+        # Training loss
+        net.feed_forward(Xtr_f)
+        train_loss = net.cost(Ytr, net.A4)
+        train_losses.append(train_loss)
+        
+        # Testing loss
+        net.feed_forward(Xte_f)
+        test_loss = net.cost(Yte, net.A4)
+        test_losses.append(test_loss)
+        
+        epochs_list.append(epoch + 1)
+        
+        print(f"Epoch {epoch+1}/{NUM_EPOCHS} - Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
+
+# Plot Training vs Testing Loss
+plt.figure(figsize=(10, 6))
+plt.plot(epochs_list, train_losses, 'b-', linewidth=2, label='Training Loss', marker='o')
+plt.plot(epochs_list, test_losses, 'r-', linewidth=2, label='Testing Loss', marker='s')
+plt.xlabel('Epoch', fontsize=12)
+plt.ylabel('Loss (Cross-Entropy)', fontsize=12)
+plt.title('Training vs Testing Loss\nBinary Weather Classification', fontsize=14, fontweight='bold')
+plt.legend(fontsize=11)
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('training_loss_curve.png', dpi=300, bbox_inches='tight')
+print("\n✅ Loss curve saved as 'training_loss_curve.png'")
 
 # After training, evaluate and create confusion matrix
 print("\n📈 Evaluating model...")
@@ -185,7 +233,9 @@ weights = {
     'accuracy': acc,
     'rain_accuracy': rain_acc,
     'no_rain_accuracy': no_rain_acc,
-    'confusion_matrix': cm.tolist()
+    'confusion_matrix': cm.tolist(),
+    'train_losses': train_losses,
+    'test_losses': test_losses
 }
 
 with open('model_weights_binary.pkl', 'wb') as f:

@@ -206,7 +206,7 @@
 <body>
     <div class="container">
         <h1>🌧️ Binary Weather Classifier ☀️</h1>
-        <p class="subtitle">Rain vs No-Rain Detection</p>
+        <p class="subtitle">ลองดูว่าเราจะได้ไปเรียน Linear กันมั้ย?</p>
 
         <div class="upload-area" id="uploadArea">
             <div class="upload-icon">☁️</div>
@@ -255,7 +255,6 @@
         const probBars = document.getElementById('probBars');
 
         let selectedFile = null;
-
         // API endpoint
         const API_URL = 'http://localhost:8001/predict';
 
@@ -378,9 +377,38 @@
                 
                 probBars.appendChild(probItem);
             }
+
+            // REMOVE OLD MESSAGE FIRST (if exists)
+            const oldMessage = document.getElementById('weatherMessage');
+            if (oldMessage) {
+                oldMessage.remove();
+            }
+    
             
+            const messageDiv = document.createElement('div');
+            messageDiv.id = 'weatherMessage'; 
+            messageDiv.style.marginTop = '20px';
+            messageDiv.style.padding = '15px';
+            messageDiv.style.borderRadius = '10px';
+            messageDiv.style.textAlign = 'center';
+            messageDiv.style.fontSize = '1.2em';
+            messageDiv.style.fontWeight = 'bold';
+            
+            if (data.predicted_class === 'Rain') {
+                messageDiv.style.background = '#ffebee';
+                messageDiv.style.color = '#c62828';
+                messageDiv.innerHTML = '☔ ว้าย อดเรียน Linear!<br><small style="font-weight: normal;">นอนต่อดีกว่า</small>';
+            } else {
+                messageDiv.style.background = '#e8f5e9';
+                messageDiv.style.color = '#2e7d32';
+                messageDiv.innerHTML = 'ว้าย ไม่ไปเรียนอยู่ดี<br><small style="font-weight: normal;">บ้ายบาย Linear วิชาที่เรารัก</small>';
+            }
+            
+            probBars.parentElement.appendChild(messageDiv);
+
             // Show results
             results.style.display = 'block';
+
         }
     </script>
 </body>
